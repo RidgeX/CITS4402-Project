@@ -76,9 +76,13 @@ classdef LRC
             colLen = prod(obj.kSubsampleSize);
             % Store each image as a column.
             training = zeros(colLen, obj.numTrain, length(classes));
+            
+            % imageOrder = 1:obj.numTrain*2;
+            imageOrder = randperm(obj.numTrain*2);
+            
             for class = 1 : length(classes)
                 for i = 1 : obj.numTrain * 2
-                    filename = sprintf('%s/%s/%d.pgm', location, classes{class}, i);
+                    filename = sprintf('%s/%s/%d.pgm', location, classes{class}, imageOrder(i));
                     % Read in and preprocess the image.
                     img = obj.preprocessImage(imread(filename));
                     if i <= obj.numTrain
