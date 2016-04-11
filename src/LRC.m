@@ -8,6 +8,8 @@ classdef LRC
         % Stores the training images in columnised format. This is the
         % matrix X_i described in the paper.
         training;
+        % Stores the testing images.
+        test;
         % Cached the values of the matrix H_i described in the paper.
         hats;
         % Names of the classes (subjects).
@@ -15,12 +17,25 @@ classdef LRC
     end
     methods
         function obj = LRC(imgLoc)
-            [obj.training, obj.classes] = obj.readTrainingImages(imgLoc);
+            [obj.training, obj.test, obj.classes] = obj.readImages(imgLoc);
             obj.hats = obj.computeHatMatrices();
         end
         
+        function [accuracy] = computeAccuracy(obj)
+            accuracy = 0.0;
+            for class = 1 : length(obj.classes)
+                for i = 1 : obj.numTrain
+                    predicted = obj.lrc(obj.test(:,i,class));
+                    if predicted == class
+                        accuracy = accuracy + 1.0;
+                    end
+                end
+            end
+            
+            accuracy = accuracy / (obj.numTrain * length(obj.classes));
+        end
+        
         function [class] = lrc(obj, img)
-            img = obj.preprocessImage(img);
             % For each class, compute the projection into its subspace and
             % get the one with the smallest eucliean distance to the input
             % image.
@@ -30,8 +45,6 @@ classdef LRC
             end
             % Return the index of the minimum distance.
             [minDist, class] = min(dists);
-            % Convert to original class name for convenience.
-            class = obj.classes{class};
         end
         
         function [img] = preprocessImage(obj, img)
@@ -55,7 +68,7 @@ classdef LRC
                 hats(:,:,i) = Xi / (Xi' * Xi) * Xi';
             end
         end
-        function [training, classes] = readTrainingImages(obj, location)
+        function [training, test, classes] = readImages(obj, location)
             % Each directory in the image directory is a subject (class).
             classes = dir(strcat(location, '/s*'));
             classes = {classes.name};
@@ -64,10 +77,15 @@ classdef LRC
             % Store each image as a column.
             training = zeros(colLen, obj.numTrain, length(classes));
             for class = 1 : length(classes)
-                for i = 1 : obj.numTrain
+                for i = 1 : obj.numTrain * 2
                     filename = sprintf('%s/%s/%d.pgm', location, classes{class}, i);
                     % Read in and preprocess the image.
-                    training(:, i, class) = obj.preprocessImage(imread(filename));
+                    img = obj.preprocessImage(imread(filename));
+                    if i <= obj.numTrain
+                        training(:, i, class) = img;
+                    else
+                        test(:, i - obj.numTrain, class) = img;
+                    end
                 end
             end
         end
