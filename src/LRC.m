@@ -1,8 +1,8 @@
 classdef LRC
     properties (Constant)
         % Parameters:
-        SUBSAMPLE_SIZE = [10 5];
-        NUM_TRAIN = 5;
+        kSubsampleSize = [10 5];
+        numTrain = 5;
     end
     properties
         % Stores the training images in columnised format. This is the
@@ -10,45 +10,65 @@ classdef LRC
         training;
         % Cached the values of the matrix H_i described in the paper.
         hats;
+        % Names of the classes (subjects).
+        classes;
     end
     methods
-        function obj = LRC(img_location)
-            obj.training = obj.read_training_images(img_location);
-            obj.hats = obj.compute_hat_matrices();
+        function obj = LRC(imgLoc)
+            [obj.training, obj.classes] = obj.readTrainingImages(imgLoc);
+            obj.hats = obj.computeHatMatrices();
         end
         
-        function lrc(obj, image)
-            image = obj.preprocess_image(image);
-            obj.hats * image
+        function [class] = lrc(obj, img)
+            img = obj.preprocessImage(img);
+            % For each class, compute the projection into its subspace and
+            % get the one with the smallest eucliean distance to the input
+            % image.
+            dists = zeros(length(obj.classes), 1);
+            for i = 1 : length(dists)
+                dists(i) = sum((img - obj.hats(:,:,i) * img) .^ 2);
+            end
+            % Return the index of the minimum distance.
+            [minDist, class] = min(dists);
+            % Convert to original class name for convenience.
+            class = obj.classes{class};
         end
         
-        function [img] = preprocess_image(obj, img)
+        function [img] = preprocessImage(obj, img)
             % Resize image to the subsample size (defined as 10x5 in
             % the paper.
-            img = imresize(img, obj.SUBSAMPLE_SIZE);
+            img = imresize(img, obj.kSubsampleSize);
             % Columnise and convert to doubles.
-            col_len = prod(obj.SUBSAMPLE_SIZE);
-            img = double(reshape(img, col_len, 1));
+            colLen = prod(obj.kSubsampleSize);
+            img = double(reshape(img, colLen, 1));
             % Noramlise so the maximum component is 1.
             img = img / max(img);
         end
-        function [hats] = compute_hat_matrices(obj)
-            % Equivalent of X_i * (tranpose(X_i) * X_i) ^-1 *
+        function [hats] = computeHatMatrices(obj)
+            % Compute H_i = X_i * (tranpose(X_i) * X_i) ^-1 *
             % transpose(X_i)
-            hats = obj.training / (transpose(obj.training) * obj.training)...
-                *transpose(obj.training);
+            imageLen = prod(obj.kSubsampleSize);
+            numClasses = length(obj.classes);
+            hats = zeros(imageLen, imageLen, numClasses);
+            for i = 1 : numClasses
+                Xi = obj.training(:,:,i);
+                hats(:,:,i) = Xi / (Xi' * Xi) * Xi';
+            end
         end
-        function [training] = read_training_images(obj, location)
-            % TODO: Read multiple directories.
+        function [training, classes] = readTrainingImages(obj, location)
+            % Each directory in the image directory is a subject (class).
+            classes = dir(strcat(location, '/s*'));
+            classes = {classes.name};
             % For each training class, stores training images. Preallocate space.
-            col_len = prod(obj.SUBSAMPLE_SIZE);
+            colLen = prod(obj.kSubsampleSize);
             % Store each image as a column.
-            training = zeros([col_len obj.NUM_TRAIN]);
-            for i = 1 : obj.NUM_TRAIN
-                filename = sprintf('%s%d.pgm', location, i);
-                imresize(imread(filename), obj.SUBSAMPLE_SIZE)
-                % Read in and preprocess the image.
-                training(:, i) = obj.preprocess_image(imread(filename));
+            training = zeros(colLen, obj.numTrain, length(classes));
+            for class = 1 : length(classes)
+                for i = 1 : obj.numTrain
+                    filename = sprintf('%s/%s/%d.pgm', location, classes{class}, i);
+                    % Read in and preprocess the image.
+                    training(:, i, class) = obj.preprocessImage(imread(filename));
+                end
             end
         end
     end

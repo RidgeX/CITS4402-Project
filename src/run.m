@@ -1,2 +1,2 @@
-lrc = LRC('../images/s1/');
-lrc.lrc(imread('../images/s2/1.pgm'));
+lrc = LRC('../images');
+lrc.lrc(imread('../images/s6/8.pgm'));
