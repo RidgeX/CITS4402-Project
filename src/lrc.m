@@ -55,22 +55,32 @@ function lrc_OpeningFcn(hObject, eventdata, handles, varargin)
 % Choose default command line output for lrc
 handles.output = hObject;
 
-% Parameters:
+% Initialise default parameters
 handles.kSubsampleSize = [10 5];
 handles.numImages = 10;
 handles.numTraining = 5;
 handles.numTest = handles.numImages - handles.numTraining;
 %handles.datasetFolder = '../images';
 handles.datasetFolder = uigetdir();
+handles.exit = false;
 
-[training, test, classes] = readImages(hObject, handles);
+% Exit cleanly if no folder chosen
+if isequal(handles.datasetFolder, 0)
+    handles.exit = true;
+    guidata(hObject, handles);
+    return
+end
+
+[trainingFile, training, testFile, test, classes] = readImages(hObject, handles);
 
 % Stores the training images in columnised format. This is the matrix X_i
 % described in the paper.
 handles.training = training;
+handles.trainingFile = trainingFile;
 
 % Stores the testing images.
 handles.test = test;
+handles.testFile = testFile;
 
 % Names of the classes (subjects).
 handles.classes = classes;
@@ -80,7 +90,7 @@ hats = computeHatMatrices(hObject, handles);
 % Caches the values of the matrix H_i described in the paper.
 handles.hats = hats;
 
-computeAccuracy(hObject, handles);
+computeAccuracy(hObject, handles, false);
 
 % Update handles structure
 guidata(hObject, handles);
@@ -96,27 +106,45 @@ function varargout = lrc_OutputFcn(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+if handles.exit
+    lrc_CloseRequestFcn(hObject, eventdata, handles);
+    return
+end
+
 % Get default command line output from handles structure
 varargout{1} = handles.output;
 
+computeAccuracy(hObject, handles, true);
 
-function [training, test, classes] = readImages(hObject, handles)
+
+% --- Executes when user attemps to close lrc.
+function lrc_CloseRequestFcn(hObject, eventdata, handles)
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hint: delete(hObject) closes the figure
+delete(hObject);
+
+
+function [trainingFile, training, testFile, test, classes] = readImages(hObject, handles)
     % Each directory in the image directory is a subject (class).
     classes = dir(handles.datasetFolder);
     isdir = [classes.isdir];
     classes = {classes(isdir).name};
     classes(ismember(classes, {'.', '..'})) = [];
 
-    % For each training class, stores training images. Preallocate space.
     colLen = prod(handles.kSubsampleSize);
 
-    % Store each image as a column.
+    % Preallocate space for all training/test class images.
     training = zeros(colLen, handles.numTraining, length(classes));
+    trainingFile = repmat({''}, handles.numTraining, length(classes));
     test = zeros(colLen, handles.numTest, length(classes));
+    testFile = repmat({''}, handles.numTest, length(classes));
 
     for i = 1 : length(classes)
         imageFolder = strcat(handles.datasetFolder, '/', classes{i});
-        images = dir(imageFolder);
+        images = [dir(strcat(imageFolder, '/', '*.pgm')); dir(strcat(imageFolder, '/', '*.jpg'))];
         isdir = [images.isdir];
         images = {images(~isdir).name};
         p = 1;
@@ -125,10 +153,14 @@ function [training, test, classes] = readImages(hObject, handles)
 
             % Read in and preprocess the image.
             img = preprocessImage(hObject, handles, imread(imageFile));
+
+            % Store each image as a column.
             if p <= handles.numTraining
                 training(:, p, i) = img;
+                trainingFile{p, i} = imageFile;
             else
                 test(:, p - handles.numTraining, i) = img;
+                testFile{p - handles.numTraining, i} = imageFile;
             end
             p = p + 1;
         end
@@ -136,9 +168,14 @@ function [training, test, classes] = readImages(hObject, handles)
 
 
 function img = preprocessImage(hObject, handles, img)
+    % Convert image to greyscale if necessary.
+    if ndims(img) == 3
+        img = rgb2gray(img);
+    end
+
     % Resize image to the subsample size (defined as 10x5 in the paper).
     img = imresize(img, handles.kSubsampleSize);
-    
+
     % Columnise and convert to doubles.
     colLen = prod(handles.kSubsampleSize);
     img = double(reshape(img, colLen, 1));
@@ -160,27 +197,47 @@ function hats = computeHatMatrices(hObject, handles)
 
 function [minDist, predicted] = classifyImage(hObject, handles, img)
     % For each class, compute the projection into its subspace and get
-    % the one with the smallest eucliean distance to the input image.
+    % the one with the smallest Euclidean distance to the input image.
     dists = zeros(length(handles.classes), 1);
     for i = 1 : length(dists)
         dists(i) = sum((img - handles.hats(:,:,i) * img) .^ 2);
     end
-    
+
     % Return the index of the minimum distance.
     [minDist, predicted] = min(dists);
 
 
-function accuracy = computeAccuracy(hObject, handles)
+function accuracy = computeAccuracy(hObject, handles, showProgress)
     numCorrect = 0;
     numTotal = handles.numTest * length(handles.classes);
+
     for i = 1 : length(handles.classes)
         for j = 1 : handles.numTest
+            % Display the original class.
+            if showProgress
+                axes(handles.axesLeft);
+                imshow(imread(handles.testFile{j, i}));
+                set(handles.textOrigClass, 'String', handles.classes{i});
+            end
+
             [minDist, predicted] = classifyImage(hObject, handles, handles.test(:, j, i));
+
+            % Display the predicted class and distance.
+            if showProgress
+                axes(handles.axesRight);
+                imshow(imread(handles.trainingFile{1, predicted}));
+                set(handles.textPredClass, 'String', handles.classes{predicted});
+                set(handles.textDist, 'String', sprintf('%.6f', minDist));
+                pause(40.0 / numTotal)  % 0.2s for 200 test images
+            end
+
             if predicted == i
                 numCorrect = numCorrect + 1;
             end
         end
     end
+
+    % Display the overall recognition accuracy.
     accuracy = numCorrect * 100.0 / numTotal;
     set(handles.labelAcc, 'String', sprintf('%.2f%% (%d/%d)', accuracy, numCorrect, numTotal));
 
@@ -217,12 +274,17 @@ function buttonRun_Callback(hObject, eventdata, handles)
 % hObject    handle to buttonRun (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
-[training, test, classes] = readImages(hObject, handles);
+[trainingFile, training, testFile, test, classes] = readImages(hObject, handles);
 handles.training = training;
+handles.trainingFile = trainingFile;
 handles.test = test;
+handles.testFile = testFile;
 handles.classes = classes;
+
 hats = computeHatMatrices(hObject, handles);
 handles.hats = hats;
-computeAccuracy(hObject, handles);
+
+computeAccuracy(hObject, handles, false);
+computeAccuracy(hObject, handles, true);
 
 guidata(hObject, handles);
