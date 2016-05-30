@@ -1,97 +1,228 @@
-classdef LRC
-    properties (Constant)
-        % Parameters:
-        kSubsampleSize = [10 5];
-        numTrain = 5;
-    end
-    properties
-        % Stores the training images in columnised format. This is the
-        % matrix X_i described in the paper.
-        training;
-        % Stores the testing images.
-        test;
-        % Cached the values of the matrix H_i described in the paper.
-        hats;
-        % Names of the classes (subjects).
-        classes;
-    end
-    methods
-        function obj = LRC(imgLoc)
-            [obj.training, obj.test, obj.classes] = obj.readImages(imgLoc);
-            obj.hats = obj.computeHatMatrices();
-        end
-        
-        function [accuracy] = computeAccuracy(obj)
-            accuracy = 0.0;
-            for class = 1 : length(obj.classes)
-                for i = 1 : obj.numTrain
-                    predicted = obj.lrc(obj.test(:,i,class));
-                    if predicted == class
-                        accuracy = accuracy + 1.0;
-                    end
-                end
-            end
-            
-            accuracy = accuracy / (obj.numTrain * length(obj.classes));
-        end
-        
-        function [class] = lrc(obj, img)
-            % For each class, compute the projection into its subspace and
-            % get the one with the smallest eucliean distance to the input
-            % image.
-            dists = zeros(length(obj.classes), 1);
-            for i = 1 : length(dists)
-                dists(i) = sum((img - obj.hats(:,:,i) * img) .^ 2);
-            end
-            % Return the index of the minimum distance.
-            [minDist, class] = min(dists);
-        end
-        
-        function [img] = preprocessImage(obj, img)
-            % Resize image to the subsample size (defined as 10x5 in
-            % the paper.
-            img = imresize(img, obj.kSubsampleSize);
-            % Columnise and convert to doubles.
-            colLen = prod(obj.kSubsampleSize);
-            img = double(reshape(img, colLen, 1));
-            % Noramlise so the maximum component is 1.
-            img = img / max(img);
-        end
-        function [hats] = computeHatMatrices(obj)
-            % Compute H_i = X_i * (tranpose(X_i) * X_i) ^-1 *
-            % transpose(X_i)
-            imageLen = prod(obj.kSubsampleSize);
-            numClasses = length(obj.classes);
-            hats = zeros(imageLen, imageLen, numClasses);
-            for i = 1 : numClasses
-                Xi = obj.training(:,:,i);
-                hats(:,:,i) = Xi / (Xi' * Xi) * Xi';
-            end
-        end
-        function [training, test, classes] = readImages(obj, location)
-            % Each directory in the image directory is a subject (class).
-            classes = dir(strcat(location, '/s*'));
-            classes = {classes.name};
-            % For each training class, stores training images. Preallocate space.
-            colLen = prod(obj.kSubsampleSize);
-            % Store each image as a column.
-            training = zeros(colLen, obj.numTrain, length(classes));
-            
-            % imageOrder = 1:obj.numTrain*2;
-            imageOrder = randperm(obj.numTrain*2);
-            
-            for class = 1 : length(classes)
-                for i = 1 : obj.numTrain * 2
-                    filename = sprintf('%s/%s/%d.pgm', location, classes{class}, imageOrder(i));
-                    % Read in and preprocess the image.
-                    img = obj.preprocessImage(imread(filename));
-                    if i <= obj.numTrain
-                        training(:, i, class) = img;
-                    else
-                        test(:, i - obj.numTrain, class) = img;
-                    end
-                end
-            end
-        end
-    end
+function varargout = lrc(varargin)
+% LRC MATLAB code for lrc.fig
+%      LRC, by itself, creates a new LRC or raises the existing
+%      singleton*.
+%
+%      H = LRC returns the handle to a new LRC or the handle to
+%      the existing singleton*.
+%
+%      LRC('CALLBACK',hObject,eventData,handles,...) calls the local
+%      function named CALLBACK in LRC.M with the given input arguments.
+%
+%      LRC('Property','Value',...) creates a new LRC or raises the
+%      existing singleton*.  Starting from the left, property value pairs are
+%      applied to the GUI before lrc_OpeningFcn gets called.  An
+%      unrecognized property name or invalid value makes property application
+%      stop.  All inputs are passed to lrc_OpeningFcn via varargin.
+%
+%      *See GUI Options on GUIDE's Tools menu.  Choose "GUI allows only one
+%      instance to run (singleton)".
+%
+% See also: GUIDE, GUIDATA, GUIHANDLES
+
+% Edit the above text to modify the response to help lrc
+
+% Last Modified by GUIDE v2.5 30-May-2016 19:41:30
+
+% Begin initialization code - DO NOT EDIT
+gui_Singleton = 1;
+gui_State = struct('gui_Name',       mfilename, ...
+                   'gui_Singleton',  gui_Singleton, ...
+                   'gui_OpeningFcn', @lrc_OpeningFcn, ...
+                   'gui_OutputFcn',  @lrc_OutputFcn, ...
+                   'gui_LayoutFcn',  [] , ...
+                   'gui_Callback',   []);
+if nargin && ischar(varargin{1})
+    gui_State.gui_Callback = str2func(varargin{1});
 end
+
+if nargout
+    [varargout{1:nargout}] = gui_mainfcn(gui_State, varargin{:});
+else
+    gui_mainfcn(gui_State, varargin{:});
+end
+% End initialization code - DO NOT EDIT
+
+
+% --- Executes just before lrc is made visible.
+function lrc_OpeningFcn(hObject, eventdata, handles, varargin)
+% This function has no output args, see OutputFcn.
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+% varargin   command line arguments to lrc (see VARARGIN)
+
+% Choose default command line output for lrc
+handles.output = hObject;
+
+% Parameters:
+handles.kSubsampleSize = [10 5];
+handles.numImages = 10;
+handles.numTraining = 5;
+handles.numTest = handles.numImages - handles.numTraining;
+%handles.datasetFolder = '../images';
+handles.datasetFolder = uigetdir();
+
+[training, test, classes] = readImages(hObject, handles);
+
+% Stores the training images in columnised format. This is the matrix X_i
+% described in the paper.
+handles.training = training;
+
+% Stores the testing images.
+handles.test = test;
+
+% Names of the classes (subjects).
+handles.classes = classes;
+
+hats = computeHatMatrices(hObject, handles);
+
+% Caches the values of the matrix H_i described in the paper.
+handles.hats = hats;
+
+computeAccuracy(hObject, handles);
+
+% Update handles structure
+guidata(hObject, handles);
+
+% UIWAIT makes lrc wait for user response (see UIRESUME)
+% uiwait(handles.figure1);
+
+
+% --- Outputs from this function are returned to the command line.
+function varargout = lrc_OutputFcn(hObject, eventdata, handles) 
+% varargout  cell array for returning output args (see VARARGOUT);
+% hObject    handle to figure
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Get default command line output from handles structure
+varargout{1} = handles.output;
+
+
+function [training, test, classes] = readImages(hObject, handles)
+    % Each directory in the image directory is a subject (class).
+    classes = dir(handles.datasetFolder);
+    isdir = [classes.isdir];
+    classes = {classes(isdir).name};
+    classes(ismember(classes, {'.', '..'})) = [];
+
+    % For each training class, stores training images. Preallocate space.
+    colLen = prod(handles.kSubsampleSize);
+
+    % Store each image as a column.
+    training = zeros(colLen, handles.numTraining, length(classes));
+    test = zeros(colLen, handles.numTest, length(classes));
+
+    for i = 1 : length(classes)
+        imageFolder = strcat(handles.datasetFolder, '/', classes{i});
+        images = dir(imageFolder);
+        isdir = [images.isdir];
+        images = {images(~isdir).name};
+        p = 1;
+        for j = randperm(handles.numImages)
+            imageFile = strcat(imageFolder, '/', images{j});
+
+            % Read in and preprocess the image.
+            img = preprocessImage(hObject, handles, imread(imageFile));
+            if p <= handles.numTraining
+                training(:, p, i) = img;
+            else
+                test(:, p - handles.numTraining, i) = img;
+            end
+            p = p + 1;
+        end
+    end
+
+
+function img = preprocessImage(hObject, handles, img)
+    % Resize image to the subsample size (defined as 10x5 in the paper).
+    img = imresize(img, handles.kSubsampleSize);
+    
+    % Columnise and convert to doubles.
+    colLen = prod(handles.kSubsampleSize);
+    img = double(reshape(img, colLen, 1));
+
+    % Normalise so the maximum component is 1.
+    img = img / max(img);
+
+
+function hats = computeHatMatrices(hObject, handles)
+    % Compute H_i = X_i * (tranpose(X_i) * X_i) ^-1 * transpose(X_i)
+    imageLen = prod(handles.kSubsampleSize);
+    numClasses = length(handles.classes);
+    hats = zeros(imageLen, imageLen, numClasses);
+    for i = 1 : numClasses
+           Xi = handles.training(:,:,i);
+           hats(:,:,i) = Xi / (Xi' * Xi) * Xi';
+    end
+
+
+function [minDist, predicted] = classifyImage(hObject, handles, img)
+    % For each class, compute the projection into its subspace and get
+    % the one with the smallest eucliean distance to the input image.
+    dists = zeros(length(handles.classes), 1);
+    for i = 1 : length(dists)
+        dists(i) = sum((img - handles.hats(:,:,i) * img) .^ 2);
+    end
+    
+    % Return the index of the minimum distance.
+    [minDist, predicted] = min(dists);
+
+
+function accuracy = computeAccuracy(hObject, handles)
+    numCorrect = 0;
+    numTotal = handles.numTest * length(handles.classes);
+    for i = 1 : length(handles.classes)
+        for j = 1 : handles.numTest
+            [minDist, predicted] = classifyImage(hObject, handles, handles.test(:, j, i));
+            if predicted == i
+                numCorrect = numCorrect + 1;
+            end
+        end
+    end
+    accuracy = numCorrect * 100.0 / numTotal;
+    set(handles.labelAcc, 'String', sprintf('%.2f%% (%d/%d)', accuracy, numCorrect, numTotal));
+
+
+% --- Executes on slider movement.
+function sliderTraining_Callback(hObject, eventdata, handles)
+% hObject    handle to sliderTraining (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'Value') returns position of slider
+%        get(hObject,'Min') and get(hObject,'Max') to determine range of slider
+handles.numTraining = round(get(hObject, 'Value'));
+set(hObject, 'Value', handles.numTraining);
+handles.numTest = handles.numImages - handles.numTraining;
+set(handles.labelTraining, 'String', sprintf('%d/%d', handles.numTraining, handles.numImages));
+
+guidata(hObject, handles);
+
+% --- Executes during object creation, after setting all properties.
+function sliderTraining_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to sliderTraining (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: slider controls usually have a light gray background.
+if isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor',[.9 .9 .9]);
+end
+
+
+% --- Executes on button press in buttonRun.
+function buttonRun_Callback(hObject, eventdata, handles)
+% hObject    handle to buttonRun (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+[training, test, classes] = readImages(hObject, handles);
+handles.training = training;
+handles.test = test;
+handles.classes = classes;
+hats = computeHatMatrices(hObject, handles);
+handles.hats = hats;
+computeAccuracy(hObject, handles);
+
+guidata(hObject, handles);
