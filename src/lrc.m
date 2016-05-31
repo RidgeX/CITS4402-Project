@@ -228,7 +228,11 @@ function accuracy = computeAccuracy(hObject, handles, showProgress)
                 imshow(imread(handles.trainingFile{1, predicted}));
                 set(handles.textPredClass, 'String', handles.classes{predicted});
                 set(handles.textDist, 'String', sprintf('%.6f', minDist));
-                pause(40.0 / numTotal)  % 0.2s for 200 test images
+                if i == predicted
+                    pause(0.5);
+                else
+                    pause(1.5);
+                end
             end
 
             if predicted == i
@@ -254,7 +258,6 @@ handles.numTraining = round(get(hObject, 'Value'));
 set(hObject, 'Value', handles.numTraining);
 handles.numTest = handles.numImages - handles.numTraining;
 set(handles.labelTraining, 'String', sprintf('%d/%d', handles.numTraining, handles.numImages));
-
 guidata(hObject, handles);
 
 % --- Executes during object creation, after setting all properties.
